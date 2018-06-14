@@ -109,50 +109,6 @@ return_route() { local network="$1" gw="$(ip route |awk '/default/ {print $3}')"
     [[ -e $route ]] && grep -q "^$network\$" $route || echo "$network" >>$route
 }
 
-### vpn: setup openvpn client
-# Arguments:
-#   server) VPN GW server
-#   user) user name on VPN
-#   pass) password on VPN
-#   port) port to connect to VPN (optional)
-# Return: configured .ovpn file
-vpn() { local server="$1" user="$2" pass="$3" port="${4:-1194}" i \
-            pem="$(\ls $dir/*.pem 2>&-)"
-
-    echo "client" >$conf
-    echo "dev tun" >>$conf
-    echo "proto udp" >>$conf
-    for i in $(sed 's/:/ /g' <<< $server); do
-        echo "remote $i $port" >>$conf
-    done
-    [[ $server =~ : ]] && echo "remote-random" >>$conf
-    echo "resolv-retry infinite" >>$conf
-    echo "keepalive 10 60" >>$conf
-    echo "nobind" >>$conf
-    echo "persist-key" >>$conf
-    echo "persist-tun" >>$conf
-    [[ "${CIPHER:-""}" ]] && echo "cipher $CIPHER" >>$conf
-    [[ "${AUTH:-""}" ]] && echo "auth $AUTH" >>$conf
-    echo "tls-client" >>$conf
-    echo "remote-cert-tls server" >>$conf
-    echo "auth-user-pass $auth" >>$conf
-    echo "comp-lzo" >>$conf
-    echo "verb 1" >>$conf
-    echo "reneg-sec 0" >>$conf
-    echo "redirect-gateway def1" >>$conf
-    echo "disable-occ" >>$conf
-    echo "fast-io" >>$conf
-    echo "ca $cert" >>$conf
-    [[ $(wc -w <<< $pem) -eq 1 ]] && echo "crl-verify $pem" >>$conf
-
-    echo "$user" >$auth
-    echo "$pass" >>$auth
-    chmod 0600 $auth
-
-    [[ "${FIREWALL:-""}" || -e $route6 || -e $route ]] &&
-        [[ "${4:-""}" ]] && firewall $port
-}
-
 ### vpnportforward: setup vpn port forwarding
 # Arguments:
 #   port) forwarded port
@@ -231,7 +187,6 @@ shift $(( OPTIND - 1 ))
 [[ "${FIREWALL:-""}" || -e $route ]] && firewall "${FIREWALL:-""}"
 [[ "${ROUTE6:-""}" ]] && return_route6 "$ROUTE6"
 [[ "${ROUTE:-""}" ]] && return_route "$ROUTE"
-[[ "${VPN:-""}" ]] && eval vpn $(sed 's/^/"/; s/$/"/; s/;/" "/g' <<< $VPN)
 [[ "${DNS:-""}" ]] && dns
 [[ "${VPNPORT:-""}" ]] && vpnportforward "$VPNPORT"
 [[ "${GROUPID:-""}" =~ ^[0-9]+$ ]] && groupmod -g $GROUPID -o vpn
@@ -246,8 +201,5 @@ elif ps -ef | egrep -v 'grep|openvpn.sh' | grep -q openvpn; then
 else
     mkdir -p /dev/net
     [[ -c /dev/net/tun ]] || mknod -m 0666 /dev/net/tun c 10 200
-    [[ -e $conf ]] || { echo "ERROR: VPN not configured!"; sleep 120; }
-    [[ -e $cert ]] || grep -q '<ca>' $conf ||
-        { echo "ERROR: VPN CA cert missing!"; sleep 120; }
     exec sg vpn -c "openvpn --cd $dir --config $conf"
 fi
