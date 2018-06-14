@@ -1,0 +1,12 @@
+FROM arm32v6/alpine
+
+RUN apk --no-cache --no-progress upgrade
+RUN apk --no-cache --no-progress add bash curl ip6tables iptables openvpn shadow tini
+RUN addgroup -S vpn
+RUN rm -rf /tmp/*
+
+COPY openvpn.sh /usr/bin/
+
+VOLUME ["/vpn"]
+
+ENTRYPOINT ["/usr/bin/openvpn.sh"]
